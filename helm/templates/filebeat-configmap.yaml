@@ -1,0 +1,61 @@
+{{- if .Values.global.filebeat.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config-{{ .Release.Name }}
+data:
+  filebeat.yml: |
+    filebeat.inputs:
+    - type: log
+      enabled: true
+      paths:
+        - {{ .Values.global.filebeat.mountPath }}/*.log
+        - {{ .Values.global.filebeat.nginxS3Gateway.mountPath }}/access.log
+        - {{ .Values.global.filebeat.nginxS3Gateway.mountPath }}/error.log
+        - {{ .Values.global.filebeat.pycsw.mountPath }}/{{ .Values.global.filebeat.pycsw.logFile }}
+      close_inactive: 5m
+      close_removed: true
+      clean_removed: true
+
+      processors:
+        - decode_json_fields:
+            fields: ["message"]
+            process_array: false
+            max_depth: 2
+            target: ""
+            overwrite_keys: false
+            add_error_key: true
+        - add_kubernetes_metadata:
+
+      fields:
+        env: {{ .Values.global.environment }}
+      
+      interval: 5s
+
+    output.elasticsearch:
+      hosts: ["{{ .Values.global.filebeat.elastic.protocol }}://{{ .Values.global.filebeat.elastic.host }}:{{ .Values.global.filebeat.elastic.port }}"]
+      username: "{{ .Values.global.filebeat.elastic.username }}"
+      password: "{{ .Values.global.filebeat.elastic.password }}"
+      index: "{{ .Values.global.filebeat.elastic.index }}-{{ .Release.Name }}"
+      {{ if .Values.global.filebeat.elastic.sslEnabled }}
+      ssl:
+        enabled: true
+        certificate_authorities: {{ .Files.Get "config/filebeat/ca.crt" | quote }}
+      {{ end }}
+
+    setup.template.enabled: true
+    setup.template.name: "{{ .Values.global.filebeat.elastic.index }}-{{ .Release.Name }}"
+    setup.template.pattern: "{{ .Values.global.filebeat.elastic.index }}-{{ .Release.Name }}-*"
+
+    setup.kibana:
+      host: "{{ .Values.global.filebeat.kibana.host }}"
+    
+    filebeat.registry.flush: 1s
+    max_procs: 3
+
+    monitoring.enabled: true
+    setup.ilm.check_exists: false
+    ilm.enabled: true
+    setup.ilm.enabled: false
+    setup.template.enabled: false
+{{- end -}}
